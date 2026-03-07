@@ -8,6 +8,12 @@ terraform {
     }
   }
 
+  backend "s3" {
+    bucket = "devops-lab-tfstate-rex"
+    key    = "dev/terraform.tfstate"
+    region = "us-east-1"
+  }  
+
   # For your sandbox, local state is fine.
   # In production you'd use S3 backend (like your Azure Storage backends at CRISP)
 }
