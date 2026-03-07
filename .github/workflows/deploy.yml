@@ -1,0 +1,89 @@
+name: Deploy to EKS
+
+on:
+  workflow_run:
+    workflows: ["CI Pipeline"]
+    types: [completed]
+    branches: [main]
+
+env:
+  AWS_REGION: us-east-1
+  EKS_CLUSTER: devops-lab-dev
+  K8S_NAMESPACE: devops-metrics
+
+jobs:
+  deploy:
+    name: Deploy to Kubernetes
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+
+    permissions:
+      id-token: write  # For OIDC auth to AWS
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push image to ECR
+        id: build
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/devops-metrics-api:$IMAGE_TAG \
+            -t $ECR_REGISTRY/devops-metrics-api:latest .
+          docker push $ECR_REGISTRY/devops-metrics-api:$IMAGE_TAG
+          docker push $ECR_REGISTRY/devops-metrics-api:latest
+          echo "image=$ECR_REGISTRY/devops-metrics-api:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER }} --region ${{ env.AWS_REGION }}
+
+      - name: Deploy to Kubernetes
+        run: |
+          # Apply namespace and service (idempotent)
+          kubectl apply -f k8s/base/namespace.yml
+          kubectl apply -f k8s/base/service.yml
+
+          # Deploy with the specific image tag (not latest)
+          sed "s|IMAGE_PLACEHOLDER|${{ steps.build.outputs.image }}|g" \
+            k8s/base/deployment.yml | kubectl apply -f -
+
+          # Wait for rollout to complete
+          kubectl rollout status deployment/devops-metrics-api \
+            -n ${{ env.K8S_NAMESPACE }} --timeout=120s
+
+      - name: Verify deployment
+        run: |
+          kubectl get pods -n ${{ env.K8S_NAMESPACE }}
+          kubectl get svc -n ${{ env.K8S_NAMESPACE }}
+
+      - name: Run smoke test
+        run: |
+          # Get the load balancer URL
+          EXTERNAL_IP=$(kubectl get svc devops-metrics-api -n ${{ env.K8S_NAMESPACE }} \
+            -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+
+          # Give it a moment to propagate
+          sleep 10
+
+          # Hit the health endpoint
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://$EXTERNAL_IP/health)
+          if [ "$HTTP_STATUS" -ne 200 ]; then
+            echo "Smoke test failed! Got HTTP $HTTP_STATUS"
+            exit 1
+          fi
+          echo "Smoke test passed! Health endpoint returned 200"
