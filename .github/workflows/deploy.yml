@@ -57,6 +57,7 @@ jobs:
           # Apply namespace and service (idempotent)
           kubectl apply -f k8s/base/namespace.yml
           kubectl apply -f k8s/base/service.yml
+          kubectl apply -f k8s/base/hpa.yml
 
           # Deploy with the specific image tag (not latest)
           sed "s|IMAGE_PLACEHOLDER|${{ steps.build.outputs.image }}|g" \
