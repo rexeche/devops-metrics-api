@@ -88,11 +88,25 @@ jobs:
 
       - name: Smoke test staging
         run: |
-          EXTERNAL_IP=$(kubectl get svc devops-metrics-api -n devops-metrics-staging \
-            -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-          sleep 15
+          echo "Waiting for load balancer to provision..."
+          for i in {1..20}; do
+            EXTERNAL_IP=$(kubectl get svc devops-metrics-api -n devops-metrics-staging \
+              -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+            if [ -n "$EXTERNAL_IP" ]; then
+              echo "Load balancer ready: $EXTERNAL_IP"
+              break
+            fi
+            echo "Attempt $i: LB not ready yet, waiting 15s..."
+            sleep 15
+          done
+
+          if [ -z "$EXTERNAL_IP" ]; then
+            echo "Load balancer never became ready"
+            exit 1
+          fi
+
           HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://$EXTERNAL_IP/health)
-          if [ "$HTTP_STATUS" -ne 200 ]; then
+          if [ "$HTTP_STATUS" -ne 200]; then
             echo "Staging smoke test failed! Got HTTP $HTTP_STATUS"
             exit 1
           fi
@@ -137,11 +151,25 @@ jobs:
 
       - name: Smoke test production
         run: |
-          EXTERNAL_IP=$(kubectl get svc devops-metrics-api -n devops-metrics-production \
-            -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-          sleep 15
+          echo "Waiting for load balancer to provision..."
+          for i in {1..20}; do
+            EXTERNAL_IP=$(kubectl get svc devops-metrics-api -n devops-metrics-production \
+              -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+            if [ -n "$EXTERNAL_IP" ]; then
+              echo "Load balancer ready: $EXTERNAL_IP"
+              break
+            fi
+            echo "Attempt $i: LB not ready yet, waiting 15s..."
+            sleep 15
+          done
+
+          if [ -z "$EXTERNAL_IP" ]; then
+            echo "Load balancer never became ready"
+            exit 1
+          fi
+
           HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://$EXTERNAL_IP/health)
-          if [ "$HTTP_STATUS" -ne 200 ]; then
+          if [ "$HTTP_STATUS" -ne 200]; then
             echo "Production smoke test failed! Got HTTP $HTTP_STATUS"
             exit 1
           fi
