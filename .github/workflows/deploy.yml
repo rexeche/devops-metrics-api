@@ -115,7 +115,7 @@ jobs:
   # ---- Stage 3: Deploy to Production (requires approval) ----
   deploy-production:
     name: Deploy to Production
-    needs: [deploy-staging, build]  # add build here
+    needs: [deploy-staging, build] # add build here
     runs-on: ubuntu-latest
     environment: production
 
@@ -168,8 +168,11 @@ jobs:
             exit 1
           fi
 
+          echo "Waiting 30s for DNS propagation..."
+          sleep 30
+
           HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://$EXTERNAL_IP/health)
-          if [ "$HTTP_STATUS" -ne 200]; then
+          if [ "$HTTP_STATUS" -ne 200 ]; then
             echo "Production smoke test failed! Got HTTP $HTTP_STATUS"
             exit 1
           fi
