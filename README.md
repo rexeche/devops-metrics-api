@@ -1,17 +1,17 @@
 # DevOps Metrics API
 
-A Python REST API for tracking DORA deployment metrics — built as a hands-on DevOps portfolio project to demonstrate end-to-end infrastructure and CI/CD skills on AWS.
+A Python REST API for tracking DORA deployment metrics.  Built as a hands-on DevOps portfolio project to demonstrate end-to-end infrastructure and CI/CD skills on AWS.
 
 > The application is intentionally simple. The point is everything around it.
 
 ## What This Demonstrates
 
-- **Containerization** — Multi-stage Docker build with non-root user and health checks
-- **Kubernetes on AWS EKS** — Deployments, Services, namespaces, and Horizontal Pod Autoscaler across dev/staging/production environments
-- **CI/CD with GitHub Actions** — Full pipeline: lint → test → build → push → deploy to staging → approval gate → deploy to production
-- **Infrastructure as Code** — AWS infrastructure (EKS cluster, VPC, ECR) provisioned with Terraform using a modular, environment-separated structure
-- **Container security** — Trivy vulnerability scanning integrated into the CI pipeline
-- **Environment promotion** — Automated staging deploy with smoke tests, manual approval gate before production
+- **Containerization** - Multi-stage Docker build with non-root user and health checks
+- **Kubernetes on AWS EKS** - Deployments, Services, namespaces, and Horizontal Pod Autoscaler across dev/staging/production environments
+- **CI/CD with GitHub Actions** - Full pipeline: lint → test → build → push → deploy to staging → approval gate → deploy to production
+- **Infrastructure as Code** - AWS infrastructure (EKS cluster, VPC, ECR) provisioned with Terraform using a modular, environment-separated structure
+- **Container security** - Trivy vulnerability scanning integrated into the CI pipeline
+- **Environment promotion** - Automated staging deploy with smoke tests, manual approval gate before production
 
 ## Tech Stack
 
