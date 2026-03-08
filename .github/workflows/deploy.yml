@@ -9,17 +9,20 @@ on:
 env:
   AWS_REGION: us-east-1
   EKS_CLUSTER: devops-lab-dev
-  K8S_NAMESPACE: devops-metrics
 
 jobs:
-  deploy:
-    name: Deploy to Kubernetes
+  # ---- Stage 1: Build & Push Image ----
+  build:
+    name: Build and Push Image
     runs-on: ubuntu-latest
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
 
     permissions:
-      id-token: write  # For OIDC auth to AWS
+      id-token: write
       contents: read
+
+    outputs:
+      image: ${{ steps.build.outputs.image }}
 
     steps:
       - name: Checkout code
@@ -40,51 +43,106 @@ jobs:
         id: build
         env:
           ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
+          IMAGE_TAG: ${{ github.event.workflow_run.head_sha }}
         run: |
-          docker build -t $ECR_REGISTRY/devops-metrics-api:$IMAGE_TAG \
-            -t $ECR_REGISTRY/devops-metrics-api:latest .
+          docker build --platform linux/amd64 -t $ECR_REGISTRY/devops-metrics-api:$IMAGE_TAG .
+          docker tag $ECR_REGISTRY/devops-metrics-api:$IMAGE_TAG $ECR_REGISTRY/devops-metrics-api:latest
           docker push $ECR_REGISTRY/devops-metrics-api:$IMAGE_TAG
           docker push $ECR_REGISTRY/devops-metrics-api:latest
           echo "image=$ECR_REGISTRY/devops-metrics-api:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
+  # ---- Stage 2: Deploy to Staging ----
+  deploy-staging:
+    name: Deploy to Staging
+    needs: build
+    runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
       - name: Update kubeconfig
+        run: aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER }} --region ${{ env.AWS_REGION }}
+
+      - name: Deploy to staging
         run: |
-          aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER }} --region ${{ env.AWS_REGION }}
+          kubectl apply -f k8s/staging/namespace.yml
+          kubectl apply -f k8s/staging/service.yml
 
-      - name: Deploy to Kubernetes
-        run: |
-          # Apply namespace and service (idempotent)
-          kubectl apply -f k8s/base/namespace.yml
-          kubectl apply -f k8s/base/service.yml
-          kubectl apply -f k8s/base/hpa.yml
+          sed "s|IMAGE_PLACEHOLDER|${{ needs.build.outputs.image }}|g" \
+            k8s/staging/deployment.yml | kubectl apply -f -
 
-          # Deploy with the specific image tag (not latest)
-          sed "s|IMAGE_PLACEHOLDER|${{ steps.build.outputs.image }}|g" \
-            k8s/base/deployment.yml | kubectl apply -f -
-
-          # Wait for rollout to complete
           kubectl rollout status deployment/devops-metrics-api \
-            -n ${{ env.K8S_NAMESPACE }} --timeout=120s
+            -n devops-metrics-staging --timeout=120s
 
-      - name: Verify deployment
+      - name: Smoke test staging
         run: |
-          kubectl get pods -n ${{ env.K8S_NAMESPACE }}
-          kubectl get svc -n ${{ env.K8S_NAMESPACE }}
-
-      - name: Run smoke test
-        run: |
-          # Get the load balancer URL
-          EXTERNAL_IP=$(kubectl get svc devops-metrics-api -n ${{ env.K8S_NAMESPACE }} \
+          EXTERNAL_IP=$(kubectl get svc devops-metrics-api -n devops-metrics-staging \
             -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-
-          # Give it a moment to propagate
-          sleep 10
-
-          # Hit the health endpoint
+          sleep 15
           HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://$EXTERNAL_IP/health)
           if [ "$HTTP_STATUS" -ne 200 ]; then
-            echo "Smoke test failed! Got HTTP $HTTP_STATUS"
+            echo "Staging smoke test failed! Got HTTP $HTTP_STATUS"
             exit 1
           fi
-          echo "Smoke test passed! Health endpoint returned 200"
+          echo "Staging smoke test passed!"
+
+  # ---- Stage 3: Deploy to Production (requires approval) ----
+  deploy-production:
+    name: Deploy to Production
+    needs: [deploy-staging, build]  # add build here
+    runs-on: ubuntu-latest
+    environment: production
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER }} --region ${{ env.AWS_REGION }}
+
+      - name: Deploy to production
+        run: |
+          kubectl apply -f k8s/production/namespace.yml
+          kubectl apply -f k8s/production/service.yml
+          kubectl apply -f k8s/production/hpa.yml
+
+          sed "s|IMAGE_PLACEHOLDER|${{ needs.build.outputs.image }}|g" \
+            k8s/production/deployment.yml | kubectl apply -f -
+
+          kubectl rollout status deployment/devops-metrics-api \
+            -n devops-metrics-production --timeout=120s
+
+      - name: Smoke test production
+        run: |
+          EXTERNAL_IP=$(kubectl get svc devops-metrics-api -n devops-metrics-production \
+            -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          sleep 15
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://$EXTERNAL_IP/health)
+          if [ "$HTTP_STATUS" -ne 200 ]; then
+            echo "Production smoke test failed! Got HTTP $HTTP_STATUS"
+            exit 1
+          fi
+          echo "Production smoke test passed!"
