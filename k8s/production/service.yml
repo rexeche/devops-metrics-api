@@ -2,9 +2,9 @@ apiVersion: v1
 kind: Service
 metadata:
   name: devops-metrics-api
-  namespace: devops-metrics
+  namespace: devops-metrics-production
 spec:
-  type: LoadBalancer  # Creates an AWS ALB to expose the service
+  type: LoadBalancer
   selector:
     app: devops-metrics-api
   ports:

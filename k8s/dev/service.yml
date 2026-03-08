@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: devops-metrics-api
+  namespace: devops-metrics-dev
+spec:
+  type: LoadBalancer  # Creates an AWS ALB to expose the service
+  selector:
+    app: devops-metrics-api
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8000

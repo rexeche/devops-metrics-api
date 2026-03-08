@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: devops-metrics-api
+  namespace: devops-metrics-dev
+  labels:
+    app: devops-metrics-api
+spec:
+  replicas: 2  # Run two pods for availability
+  selector:
+    matchLabels:
+      app: devops-metrics-api
+  template:
+    metadata:
+      labels:
+        app: devops-metrics-api
+    spec:
+      containers:
+        - name: api
+          image: IMAGE_PLACEHOLDER  # Gets replaced during deployment
+          ports:
+            - containerPort: 8000
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "250m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10

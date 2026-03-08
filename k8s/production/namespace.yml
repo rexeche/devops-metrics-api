@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: devops-metrics-production
+  labels:
+    app: devops-metrics-api
+    environment: production

@@ -2,11 +2,11 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: devops-metrics-api
-  namespace: devops-metrics
+  namespace: devops-metrics-production
   labels:
     app: devops-metrics-api
 spec:
-  replicas: 2  # Run two pods for availability
+  replicas: 2
   selector:
     matchLabels:
       app: devops-metrics-api
@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: api
-          image: IMAGE_PLACEHOLDER  # Gets replaced during deployment
+          image: IMAGE_PLACEHOLDER
           ports:
             - containerPort: 8000
           resources:
